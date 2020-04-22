@@ -35,33 +35,34 @@ class ApiController extends Controller
 
     public function run(Request $request)
     {
-        $this->id = $request->input('id');
-        $method = $request->input('method');
+        if (!$request->input()) return $this->_sendError('no set: any params');
+        $this->id = trim($request->input('id'));
+        $method = trim($request->input('method'));
         $params = $request->input('params');
+        if (!$this->id) return $this->_sendError('no set: id');
+        if (!$method) return $this->_sendError('no set: method');
         return $this->_runMethod($method, $params);
     }
 
-    protected function _runMethod(string $method, array $params): array
+    protected function _runMethod(string $method, ?array $params = null): array
     {
         $result = null;
         $_method = '_' . $method;
-        if (method_exists($this, $_method)) {
-            try {
-                $result = $this->$_method($params);
-            } catch (\Exception $e){
-                return $this->_sendError($e->getCode(), $e->getMessage());
-            }
-            if (is_array($result)) {
-                return $this->_sendOk($result);
-            }
+        if (!method_exists($this, $_method)) return $this->_sendError(400, 'unknow method');
+        try {
+            $result = $this->$_method($params ?? []);
+        } catch (\Exception $e) {
+            return $this->_sendError($e->getCode(), $e->getMessage());
         }
-        return $this->_sendError(400, 'unknow method');
+        if (is_array($result)) {
+            return $this->_sendOk($result);
+        }
     }
 
     protected function _sendMessage(array $params): ?array
     {
         $message = $params['message'] ?? '';
-        $message = str_replace(PHP_EOL, '<br/>',$message);
+        $message = str_replace(PHP_EOL, '<br/>', $message);
         $data = [
             'name' => $params['name'] ?? '',
             'message' => $message,
@@ -69,7 +70,7 @@ class ApiController extends Controller
         ];
         $message = new Message($data);
         $res = $message->save();
-        if (!$res) return $this->_sendError('500','fail save');
+        if (!$res) return $this->_sendError('500', 'fail save');
         $message = Message::find($message->id);
         return [
             'created' => $message->created_at,
@@ -78,18 +79,20 @@ class ApiController extends Controller
             'id' => $message->id
         ];
     }
+
     protected function _getMessages(array $params): ?array
     {
         $page_uid = trim($params['page_uid'] ?? '');
         if (!$page_uid) return null;
         $result = [];
-        $where = Message::where(['page_uid' => $page_uid]);
-        foreach ($where->cursor() as $message) {
+        $query = Message::where(['page_uid' => $page_uid])->orderByRaw('created_at DESC');
+        foreach ($query->cursor() as $message) {
+            $messageA = $message->toArray();
             $result[] = [
-                'created' => $message->created_at,
-                'message' => $message->message,
-                'name' => $message->name,
-                'id' => $message->id
+                'created' => $messageA['created_at'],
+                'message' => $messageA['message'],
+                'name' => $messageA['name'],
+                'id' => $messageA['id']
             ];
         }
         return $result;
